@@ -1,0 +1,1694 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mechanical Ventilator Simulator</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="css/app.css" />
+
+    <!-- Flux appearance setup (light mode only as requested) -->
+    <script>
+        window.Flux = {
+            applyAppearance(appearance) {
+                document.documentElement.classList.remove('dark');
+            }
+        };
+        window.Flux.applyAppearance('light');
+
+        // Global mock for Livewire ($wire) to run standalone in Articulate Rise
+        window.$wire = {
+            teachingModeEnabled: false,
+            hideMeasurements: false,
+            set(key, value) {
+                console.log(`Mock $wire.set: ${key} = ${value}`);
+            },
+            pushToLearner() {},
+            broadcastSettings() {},
+            saveScenarioFromAlpine() {
+                return Promise.resolve();
+            }
+        };
+    </script>
+
+    <!-- JS Scripts (Deferred to run after DOM loads) -->
+    <script src="js/ventilator_simulator.js" defer></script>
+    <script src="js/flux.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script type="module" src="js/app.js" defer></script>
+
+    <style>
+        body {
+            font-family: 'Instrument Sans', sans-serif;
+            background-color: #f9fafb; /* Light background */
+            color: #111827; /* Dark text */
+        }
+        
+        /* Force light mode on container and elements */
+        .dark {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="bg-zinc-50 text-zinc-900 antialiased">
+
+<div x-data="ventilatorSimulator()" x-init="init()"
+     @load-scenario.window="loadScenario($event.detail)"
+     @apply-settings.window="applySettings($event.detail)"
+     @resize-charts.window="resizeCharts()"
+     @open-save-modal-from-banner.window="openSaveModal()"
+     class="container mx-auto px-4 py-8">
+    <!-- Header with Controls -->
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+            <h1 class="text-2xl lg:text-xl font-bold text-zinc-900 dark:text-white">Mechanical Ventilator Simulator</h1>
+            <p class="text-xs text-zinc-600 dark:text-zinc-400 hidden lg:block">Real-time respiratory mechanics
+                simulation</p>
+        </div>
+        <div class="flex flex-wrap gap-2 items-center">
+            <!-- Waveform Size Control (hidden on mobile, shown above waveforms instead) -->
+            <div class="hidden md:flex items-center gap-2 lg:gap-3">
+                <div
+                    class="flex items-center gap-1 lg:gap-2 bg-white dark:bg-zinc-800 rounded-lg px-2 lg:px-3 py-1.5 shadow">
+                    <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">Waveform
+                        Size:</label>
+                    <input type="range" x-model.number="waveformHeight" min="100" max="400" step="50"
+                           class="w-16 lg:w-20 h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                    <span class="text-xs text-zinc-600 dark:text-zinc-400 w-8" x-text="waveformHeight + 'px'"></span>
+                </div>
+                <div
+                    class="flex items-center gap-1 lg:gap-2 bg-white dark:bg-zinc-800 rounded-lg px-2 lg:px-3 py-1.5 shadow">
+                    <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">Time
+                        Window:</label>
+                    <input type="range" x-model.number="timeWindow" min="5" max="30" step="1"
+                           class="w-16 lg:w-20 h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                    <span class="text-xs text-zinc-600 dark:text-zinc-400 w-8" x-text="timeWindow + 's'"></span>
+                </div>
+            </div>
+
+            <!-- Settings Toggle & Reset (Hidden in Learner Mode) -->
+                            <div class="flex gap-2">
+                    <button @click="resetToDefaults()"
+                            class="px-3 py-1.5 bg-red-600 dark:bg-red-700 text-white rounded-lg text-sm font-medium hover:bg-red-700 dark:hover:bg-red-600 transition-colors">
+                        Reset
+                    </button>
+                    <button @click="showSettings = !showSettings; if(showSettings) settingsJustConfirmed = false"
+                            class="px-3 py-1.5 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-lg text-sm font-medium hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors">
+                        <span x-text="showSettings ? 'Hide Patient' : 'Patient & Scenarios'"></span>
+                    </button>
+                </div>
+                    </div>
+    </div>
+
+    <!-- Desktop: Two Column Layout | Mobile: Single Column -->
+    <!-- This container goes fullscreen when toggled -->
+    <div id="waveforms-container" class="lg:grid lg:grid-cols-[280px_1fr] lg:gap-4"
+         :class="isFullscreen ? 'bg-zinc-100 dark:bg-zinc-900 p-4 overflow-auto' : ''">
+        <!-- Fullscreen Header (only visible in fullscreen mode) -->
+        <div x-show="isFullscreen" x-cloak class="col-span-full mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+                <div class="flex items-center gap-2 bg-white dark:bg-zinc-800 rounded-lg px-2 py-1.5 shadow">
+                    <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">Time:</label>
+                    <input type="range" x-model.number="timeWindow" min="5" max="30" step="1"
+                           class="w-16 h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                    <span class="text-xs text-zinc-600 dark:text-zinc-400 w-6" x-text="timeWindow + 's'"></span>
+                </div>
+                <div class="flex items-center gap-2 bg-white dark:bg-zinc-800 rounded-lg px-2 py-1.5 shadow">
+                    <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">Size:</label>
+                    <input type="range" x-model.number="waveformHeight" min="100" max="400" step="50"
+                           class="w-16 h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                    <span class="text-xs text-zinc-600 dark:text-zinc-400 w-8" x-text="waveformHeight + 'px'"></span>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button
+                    x-data
+                    x-on:click="$flux.appearance = $flux.appearance === 'dark' ? 'light' : 'dark'"
+                    class="p-1.5 rounded-md bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600"
+                >
+                    <svg class="shrink-0 [:where(&amp;)]:size-6 size-4 text-zinc-700 dark:text-zinc-300" x-show="$flux.appearance === 'dark'" data-flux-icon xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" data-slot="icon">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"/>
+</svg>
+
+                            <svg class="shrink-0 [:where(&amp;)]:size-6 size-4 text-zinc-700 dark:text-zinc-300" x-show="$flux.appearance !== 'dark'" data-flux-icon xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" data-slot="icon">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z"/>
+</svg>
+
+                        </button>
+                <button @click="toggleFullscreen()"
+                        class="px-3 py-1.5 text-xs font-medium rounded-md bg-red-600 text-white hover:bg-red-700">
+                    Exit
+                </button>
+            </div>
+        </div>
+
+        <!-- Left Sidebar (Desktop) / Stacked (Mobile) -->
+        <div class="flex flex-col gap-3 mb-3 lg:mb-0">
+            <!-- Vent Settings & Measurements - Single Panel with Two Columns -->
+            <!-- Order: last on mobile (after Adjust Ventilator + optional QR), 1st on desktop -->
+            <div class="bg-white dark:bg-zinc-800 rounded-lg shadow-lg order-3 lg:order-1"
+                 :class="isFullscreen ? 'p-4' : 'p-3'">
+                <div class="grid grid-cols-2 gap-3">
+                    <!-- Vent Settings (Left Column) -->
+                    <div>
+                        <h3 :class="isFullscreen ? 'text-base mb-3' : 'text-sm mb-2'"
+                            class="font-semibold text-zinc-900 dark:text-white">Vent Settings</h3>
+                        <div :class="isFullscreen ? 'space-y-2' : 'space-y-1'">
+                            <div class="flex items-center gap-1">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">Mode</p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span
+                                        x-text="settings.mode === 'volume_control' ? 'VC' : (settings.mode === 'pressure_control' ? 'PC' : (settings.mode === 'prvc' ? 'PRVC' : (settings.mode === 'pav_plus' ? 'PAV+' : (settings.pressureSupport === 0 ? 'CPAP' : 'PS'))))"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">PEEP</p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="settings.peep"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1" x-show="settings.mode === 'pressure_control'">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">PC</p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="settings.deltaPressure"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1" x-show="settings.mode === 'pressure_support'">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">PS</p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="settings.pressureSupport"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1" x-show="settings.mode === 'volume_control'">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">V<sub>T</sub></p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="settings.tidalVolume"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1" x-show="settings.mode === 'volume_control'">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">Flow</p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="settings.flow"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1" x-show="settings.mode === 'prvc'">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">Target V<sub>T</sub></p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="settings.prvcTargetVolume"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1" x-show="settings.mode === 'prvc'">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">Pmax</p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="settings.prvcPmax"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1" x-show="settings.mode === 'pav_plus'">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">% Support</p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="settings.pavSupportPercent"></span>%
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1" x-show="settings.mode === 'pav_plus'">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">Pmax</p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="settings.pavPmax"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1" x-show="settings.mode !== 'pressure_support' && settings.mode !== 'pav_plus'">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">RR</p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="settings.rate"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1"
+                                 x-show="settings.mode === 'pressure_control' || settings.mode === 'prvc'">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">I-Time</p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="settings.iTime"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1" x-show="settings.mode === 'pressure_support'">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">Insp Cycle</p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="settings.flowCyclePercent"></span>%
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">FiO₂</p>
+                                <p :class="isFullscreen ? 'text-base' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="(settings.fio2 * 100).toFixed(0)"></span>%
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Measurements (Right Column) -->
+                    <div>
+                        <h3 :class="isFullscreen ? 'text-base mb-3' : 'text-sm mb-2'"
+                            class="font-semibold text-zinc-900 dark:text-white">Measurements</h3>
+                        <div :class="isFullscreen ? 'space-y-2' : 'space-y-1'">
+                            <div class="flex items-center gap-1"
+                                 x-show="true">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">PIP</p>
+                                <p :class="isFullscreen ? 'text-lg' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="measurements.pip.toFixed(0)"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1"
+                                 x-show="((settings.mode === 'volume_control' && settings.inspiratoryPause > 0) || currentTime < manualHoldPlateauDisplayUntil)">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">Plateau</p>
+                                <p :class="isFullscreen ? 'text-lg' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="measurements.plateau.toFixed(0)"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1"
+                                 x-show="true">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400"
+                                   x-text="(activePauseType === 'expiratory' && pauseDuration > 0.3) ? 'PEEPtotal' : 'PEEP'"></p>
+                                <p :class="isFullscreen ? 'text-lg' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="measurements.peep.toFixed(0)"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">RR</p>
+                                <p :class="isFullscreen ? 'text-lg' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="measurements.rate.toFixed(0)"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">V<sub>TE</sub></p>
+                                <p :class="isFullscreen ? 'text-lg' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="measurements.tidalVolume.toFixed(0)"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1"
+                                 x-show="patient.patientSex && patient.patientHeight >= 100">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">ml/kg PBW</p>
+                                <p :class="isFullscreen ? 'text-lg' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span
+                                        x-text="(measurements.tidalVolume / calculatePBW(patient.patientSex, patient.patientHeight)).toFixed(1)"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">MV</p>
+                                <p :class="isFullscreen ? 'text-lg' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="measurements.minuteVent.toFixed(1)"></span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1"
+                                 x-show="showP01 && measurements.p01 !== null && !(settings.mode === 'pressure_support' && settings.pressureSupport === 0)">
+                                <p :class="isFullscreen ? 'text-sm' : 'text-sm'"
+                                   class="text-zinc-600 dark:text-zinc-400">P0.1</p>
+                                <p :class="isFullscreen ? 'text-lg' : 'text-sm'"
+                                   class="font-bold text-zinc-900 dark:text-white">
+                                    <span x-text="Math.max(0, measurements.p01).toFixed(1)"></span>
+                                </p>
+                            </div>
+                            <label x-show="((patient.spontaneousBreathingEnabled && patient.pmusAmplitude > 0) || patient.cardiacOscillationsEnabled) && !(settings.mode === 'pressure_support' && settings.pressureSupport === 0)"
+                                   class="flex items-center gap-1 cursor-pointer mt-1">
+                                <input type="checkbox" x-model="showP01"
+                                       class="w-3 h-3 text-blue-600 bg-zinc-100 border-zinc-300 rounded focus:ring-blue-500 dark:bg-zinc-700 dark:border-zinc-600">
+                                <span class="text-xs text-zinc-600 dark:text-zinc-400">Show P0.1</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            
+            
+            
+            <!-- Order: 1st on mobile, 3rd on desktop (after Measurements + QR) -->
+            <div class="bg-white dark:bg-zinc-800 rounded-lg shadow-lg order-1 lg:order-3"
+                 :class="isFullscreen ? 'p-4' : 'p-3'">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 :class="isFullscreen ? 'text-base' : 'text-sm'"
+                        class="font-semibold text-zinc-900 dark:text-white">Adjust Ventilator</h3>
+                    <div class="flex gap-1">
+                        <template x-if="hasPendingSettingsChanges() && !hasConfirmedChanges">
+                            <button @click="confirmSettings()"
+                                    :disabled="hasInvalidIERatio()"
+                                    :class="[
+                                        isFullscreen ? 'text-xs px-3 py-1.5' : 'text-xs px-2 py-1',
+                                        hasInvalidIERatio()
+                                            ? 'bg-zinc-300 dark:bg-zinc-600 text-zinc-500 dark:text-zinc-400 cursor-not-allowed'
+                                            : 'bg-green-600 hover:bg-green-700 text-white'
+                                    ]"
+                                    class="font-medium rounded-md transition-colors">
+                                Confirm
+                            </button>
+                        </template>
+                        <template x-if="hasPendingSettingsChanges() && !hasConfirmedChanges">
+                            <button @click="cancelPendingChanges()"
+                                    :class="isFullscreen ? 'text-xs px-3 py-1.5' : 'text-xs px-2 py-1'"
+                                    class="bg-zinc-200 dark:bg-zinc-600 hover:bg-zinc-300 dark:hover:bg-zinc-500 text-zinc-700 dark:text-zinc-200 rounded-md transition-colors">
+                                Cancel
+                            </button>
+                        </template>
+
+                        <template x-if="hasConfirmedVentilatorChanges">
+                            <span :class="isFullscreen ? 'text-xs px-3 py-1.5' : 'text-xs px-2 py-1'"
+                                  class="inline-flex items-center gap-1 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 font-medium rounded-md">
+                                <svg class="w-3 h-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none"
+                                     viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                            stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor"
+                                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span x-text="isWaitingForExtendedBreath() ? 'Waiting for breath...' : 'Applying...'"></span>
+                            </span>
+                        </template>
+                    </div>
+                </div>
+
+                <div :class="isFullscreen ? 'space-y-3' : 'space-y-2'">
+                    <!-- Mode -->
+                    <div>
+                        <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                               class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">Mode</label>
+                        <select x-model="pendingSettings.mode"
+                                @change="if ((pendingSettings.mode === 'pressure_support' || pendingSettings.mode === 'pav_plus') && !isLearnerMode) { pendingPatient.spontaneousBreathingEnabled = true; if (pendingPatient.pmusAmplitude === 0) pendingPatient.pmusAmplitude = 8; }"
+                                :class="isFullscreen ? 'text-sm py-2' : 'text-xs py-1.5'"
+                                class="w-full px-2 border border-zinc-300 dark:border-zinc-600 rounded-md bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
+                            <option value="pressure_control">Pressure Control (PC)</option>
+                            <option value="volume_control">Volume Control (VC)</option>
+                            <option value="prvc">PRVC</option>
+                            <option value="pressure_support">Pressure Support (PS)</option>
+                             <option value="pav_plus">PAV</option>
+                        </select>
+                    </div>
+
+                    <!-- PEEP -->
+                    <div>
+                        <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                               class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                            PEEP: <span x-text="pendingSettings.peep"></span> cmH₂O
+                        </label>
+                        <input type="range" x-model.number="pendingSettings.peep" min="0" max="30" step="1"
+                               class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- Pressure Control Settings -->
+                    <template x-if="pendingSettings.mode === 'pressure_control'">
+                        <div :class="isFullscreen ? 'space-y-3' : 'space-y-2'">
+                            <div>
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    PC (above PEEP): <span x-text="pendingSettings.deltaPressure"></span> cmH₂O
+                                </label>
+                                <input type="range" x-model.number="pendingSettings.deltaPressure" min="5" max="60"
+                                       step="1"
+                                       class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                            </div>
+                            <div>
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    I-Time: <span x-text="pendingSettings.iTime"></span>s
+                                </label>
+                                <input type="range" x-model.number="pendingSettings.iTime" min="0.3" max="3" step="0.05"
+                                       class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                            </div>
+                            <div class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                I:E Ratio: 1:<span
+                                    x-text="(() => { const breathPeriod = 60 / pendingSettings.rate; const eTime = breathPeriod - pendingSettings.iTime; return eTime > 0 ? (eTime / pendingSettings.iTime).toFixed(1) : '0.0'; })()"></span>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Volume Control Settings -->
+                    <template x-if="pendingSettings.mode === 'volume_control'">
+                        <div :class="isFullscreen ? 'space-y-3' : 'space-y-2'">
+                            <div>
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    Tidal Volume (mL)
+                                </label>
+                                <input type="number" x-model.number="pendingSettings.tidalVolume" min="2" max="1000"
+                                       step="1"
+                                       class="w-full px-2 py-1 text-sm bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded-md text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    Flow: <span x-text="pendingSettings.flow"></span> L/min
+                                </label>
+                                <input type="range" x-model.number="pendingSettings.flow" min="5" max="100" step="5"
+                                       class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                <div class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                    <span x-text="(() => {
+                                        const flowRateMLPerS = pendingSettings.flow * 1000 / 60;
+                                        let iTime = pendingSettings.flowPattern === 'decelerating'
+                                            ? (2 * pendingSettings.tidalVolume) / flowRateMLPerS
+                                            : pendingSettings.tidalVolume / flowRateMLPerS;
+                                        let result = 'I-Time: ' + iTime.toFixed(2) + 's';
+                                        if (pendingSettings.inspiratoryPause > 0) {
+                                            result += ' + insp pause ' + pendingSettings.inspiratoryPause + 's';
+                                        }
+                                        const breathPeriod = 60 / pendingSettings.rate;
+                                        const eTime = breathPeriod - iTime - pendingSettings.inspiratoryPause;
+                                        const ieRatio = eTime > 0 ? (eTime / iTime).toFixed(1) : '0.0';
+                                        result += ' | I:E 1:' + ieRatio;
+                                        return result;
+                                    })()"></span>
+                                </div>
+                            </div>
+                            <div>
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">Flow
+                                    Pattern</label>
+                                <div class="flex gap-1">
+                                    <button @click="pendingSettings.flowPattern = 'constant'"
+                                            :class="[pendingSettings.flowPattern === 'constant' ? 'bg-blue-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300', isFullscreen ? 'text-xs py-1.5' : 'text-xs py-1']"
+                                            class="flex-1 px-2 rounded-md transition-colors">
+                                        Constant
+                                    </button>
+                                    <button @click="pendingSettings.flowPattern = 'decelerating'"
+                                            :class="[pendingSettings.flowPattern === 'decelerating' ? 'bg-blue-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300', isFullscreen ? 'text-xs py-1.5' : 'text-xs py-1']"
+                                            class="flex-1 px-2 rounded-md transition-colors">
+                                        Decel
+                                    </button>
+                                </div>
+                            </div>
+                            <div>
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    Insp Pause: <span x-text="pendingSettings.inspiratoryPause"></span> sec
+                                </label>
+                                <input type="range" x-model.number="pendingSettings.inspiratoryPause" min="0" max="2"
+                                       step="0.1"
+                                       class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                <div class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                    <span x-show="pendingSettings.inspiratoryPause > 0">Plateau pressure will be measured</span>
+                                    <span x-show="pendingSettings.inspiratoryPause === 0">No pause</span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- PRVC Settings -->
+                    <template x-if="pendingSettings.mode === 'prvc'">
+                        <div :class="isFullscreen ? 'space-y-3' : 'space-y-2'">
+                            <div>
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    Target Vt (mL)
+                                </label>
+                                <input type="number" x-model.number="pendingSettings.prvcTargetVolume" min="2"
+                                       max="1000" step="1"
+                                       class="w-full px-2 py-1 text-sm bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded-md text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    I-Time: <span x-text="pendingSettings.iTime"></span>s
+                                </label>
+                                <input type="range" x-model.number="pendingSettings.iTime" min="0.3" max="3" step="0.05"
+                                       class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                <div class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                    I:E Ratio: 1:<span
+                                        x-text="(() => { const breathPeriod = 60 / pendingSettings.rate; const eTime = breathPeriod - pendingSettings.iTime; return eTime > 0 ? (eTime / pendingSettings.iTime).toFixed(1) : '0.0'; })()"></span>
+                                </div>
+                            </div>
+                            <div>
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    Pmax: <span x-text="pendingSettings.prvcPmax"></span> cmH₂O
+                                </label>
+                                <input type="range" x-model.number="pendingSettings.prvcPmax" min="15" max="50" step="1"
+                                       class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Pressure Support Settings -->
+                    <template x-if="pendingSettings.mode === 'pressure_support'">
+                        <div :class="isFullscreen ? 'space-y-3' : 'space-y-2'">
+                            <div>
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    <span x-show="pendingSettings.pressureSupport > 0">PS Level: <span
+                                            x-text="pendingSettings.pressureSupport"></span> cmH₂O</span>
+                                    <span x-show="pendingSettings.pressureSupport === 0">CPAP (PS = 0)</span>
+                                </label>
+                                <input type="range" x-model.number="pendingSettings.pressureSupport" min="0" max="30"
+                                       step="1"
+                                       class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                            </div>
+                            <div x-show="pendingSettings.pressureSupport > 0">
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    Flow Cycle: <span x-text="pendingSettings.flowCyclePercent"></span>%
+                                </label>
+                                <input type="range" x-model.number="pendingSettings.flowCyclePercent" min="10" max="90"
+                                       step="5"
+                                       class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- PAV+ Settings -->
+                    <template x-if="pendingSettings.mode === 'pav_plus'">
+                        <div :class="isFullscreen ? 'space-y-3' : 'space-y-2'">
+                            <div>
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    <span>% Support: <span x-text="pendingSettings.pavSupportPercent"></span>%</span>
+                                    <span class="text-zinc-500 dark:text-zinc-400 ml-1">(Pvent = <span x-text="(pendingSettings.pavSupportPercent / (100 - pendingSettings.pavSupportPercent)).toFixed(1)"></span> × Pmus)</span>
+                                </label>
+                                <input type="range" x-model.number="pendingSettings.pavSupportPercent" min="5" max="95"
+                                       step="5"
+                                       class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                <div class="flex justify-between text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                                    <span>Less support</span>
+                                    <span>More support</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                       class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    Pmax: <span x-text="pendingSettings.pavPmax"></span> cmH₂O
+                                </label>
+                                <input type="range" x-model.number="pendingSettings.pavPmax" min="15" max="50" step="1"
+                                       class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Rate (PC/VC/PRVC only - not PS or PAV+) -->
+                    <div x-show="pendingSettings.mode !== 'pressure_support' && pendingSettings.mode !== 'pav_plus'">
+                        <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                               class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                            Rate: <span x-text="pendingSettings.rate"></span> bpm
+                        </label>
+                        <input type="range" x-model.number="pendingSettings.rate" min="5" max="60" step="1"
+                               class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- I:E Ratio Warning -->
+                    <div x-show="hasInvalidIERatio()" class="p-2 bg-red-100 dark:bg-red-900/50 border border-red-300 dark:border-red-700 rounded-md">
+                        <p class="text-xs text-red-700 dark:text-red-300 font-medium flex items-center gap-1">
+                            <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                            </svg>
+                            Invalid I:E ratio - no expiratory time. Reduce rate, I-time, or pause.
+                        </p>
+                    </div>
+
+                    <!-- Trigger Sensitivity (hidden in CPAP mode) -->
+                    <div class="border-t border-zinc-200 dark:border-zinc-700 pt-2"
+                         x-show="!(pendingSettings.mode === 'pressure_support' && pendingSettings.pressureSupport === 0)">
+                        <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                               class="block font-semibold text-zinc-900 dark:text-white mb-2">Trigger</label>
+                        <div class="flex gap-1 mb-2">
+                            <button @click="pendingSettings.triggerType = 'pressure'"
+                                    :class="[pendingSettings.triggerType === 'pressure' ? 'bg-blue-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300', isFullscreen ? 'text-xs py-1.5' : 'text-xs py-1']"
+                                    class="flex-1 px-2 rounded font-medium transition-colors">
+                                Pressure
+                            </button>
+                            <button @click="pendingSettings.triggerType = 'flow'"
+                                    :class="[pendingSettings.triggerType === 'flow' ? 'bg-blue-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300', isFullscreen ? 'text-xs py-1.5' : 'text-xs py-1']"
+                                    class="flex-1 px-2 rounded font-medium transition-colors">
+                                Flow
+                            </button>
+                        </div>
+                        <div x-show="pendingSettings.triggerType === 'pressure'">
+                            <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                   class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                Sensitivity: <span x-text="pendingSettings.pressureTrigger"></span> cmH₂O
+                            </label>
+                            <input type="range" x-model.number="pendingSettings.pressureTrigger" min="-5" max="-1"
+                                   step="0.5"
+                                   class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div x-show="pendingSettings.triggerType === 'flow'">
+                            <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                                   class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                Sensitivity: <span x-text="pendingSettings.flowTrigger"></span> L/min
+                            </label>
+                            <input type="range" x-model.number="pendingSettings.flowTrigger" min="1" max="5" step="0.5"
+                                   class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+
+                    <!-- FiO2 -->
+                    <div>
+                        <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                               class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                            FiO₂: <span x-text="(pendingSettings.fio2 * 100).toFixed(0)"></span>%
+                        </label>
+                        <input type="range" x-model.number="pendingSettings.fio2" min="0.21" max="1" step="0.01"
+                               class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- Rise Time (pressure-based modes only, not PAV) -->
+                    <div x-show="pendingSettings.mode !== 'volume_control' && pendingSettings.mode !== 'pav_plus'">
+                        <label :class="isFullscreen ? 'text-sm' : 'text-xs'"
+                               class="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                            Rise Time: <span x-text="pendingSettings.riseTime.toFixed(2)"></span>s
+                        </label>
+                        <input type="range" x-model.number="pendingSettings.riseTime" min="0" max="0.4" step="0.05"
+                               class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- Revert to Previous Settings -->
+                    <template x-if="hasPreviousVentSettings() && !hasConfirmedChanges">
+                        <div class="pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                            <button @click="revertToPreviousSettings()"
+                                    :class="isFullscreen ? 'text-sm py-2' : 'text-xs py-1.5'"
+                                    class="w-full px-3 bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-md transition-colors flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+                                </svg>
+                                Revert to Previous Settings
+                            </button>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Main Content (Waveforms) -->
+        <div>
+
+            <!-- Control Panel (Collapsible) - Hidden in fullscreen -->
+            <!-- Settings Drawer Overlay (transparent to see waveforms) -->
+            <div x-show="showSettings && !isFullscreen"
+                 @click="showSettings = false"
+                 x-transition:enter="transition-opacity ease-out duration-200"
+                 x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100"
+                 x-transition:leave="transition-opacity ease-in duration-150"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 class="fixed inset-0 z-40"
+                 style="display: none; background: rgba(0, 0, 0, 0.1);">
+            </div>
+
+            <!-- Settings Drawer -->
+            <div x-show="showSettings && !isFullscreen"
+                 @click.away="showSettings = false"
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="translate-x-full"
+                 x-transition:enter-end="translate-x-0"
+                 x-transition:leave="transition ease-in duration-200"
+                 x-transition:leave-start="translate-x-0"
+                 x-transition:leave-end="translate-x-full"
+                 class="fixed right-0 top-0 h-full w-full md:w-2/3 lg:w-1/2 shadow-2xl z-50 overflow-y-auto"
+                 style="display: none; backdrop-filter: blur(8px); background: rgba(255, 255, 255, 0.95);">
+                <div class="p-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="flex items-center gap-3">
+                            <h1 class="text-lg font-bold text-zinc-900">Patient & Scenarios</h1>
+                            <!-- Confirm Button - show when there are pending patient changes not yet confirmed -->
+                            <template x-if="hasPendingPatientChanges() && !hasConfirmedChanges">
+                                <button @click="confirmSettings()"
+                                        :disabled="hasInvalidIERatio()"
+                                        :class="hasInvalidIERatio()
+                                            ? 'bg-zinc-300 dark:bg-zinc-600 text-zinc-500 dark:text-zinc-400 cursor-not-allowed'
+                                            : 'bg-green-600 hover:bg-green-700 text-white'"
+                                        class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors">
+                                    Confirm
+                                </button>
+                            </template>
+                            <!-- Warning if I:E invalid from ventilator settings -->
+                            <template x-if="hasPendingPatientChanges() && !hasConfirmedChanges && hasInvalidIERatio()">
+                                <span class="text-xs text-red-600 dark:text-red-400">Fix I:E ratio in ventilator settings</span>
+                            </template>
+
+                            <!-- Done Button - show after confirming, settings apply in background -->
+                            <template x-if="settingsJustConfirmed && !hasPendingPatientChanges()">
+                                <button @click="closeSettingsPanel()"
+                                        class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors">
+                                    Done
+                                </button>
+                            </template>
+                            <template x-if="hasConfirmedPatientChanges">
+                            <span :class="isFullscreen ? 'text-xs px-3 py-1.5' : 'text-xs px-2 py-1'"
+                                  class="inline-flex items-center gap-1 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 font-medium rounded-md">
+                                <svg class="w-3 h-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none"
+                                     viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                            stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor"
+                                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span x-text="isWaitingForExtendedBreath() ? 'Waiting for breath...' : 'Applying...'"></span>
+                            </span>
+                            </template>
+
+                            <!-- Cancel Button - show when there are pending patient changes not yet confirmed -->
+                            <template x-if="hasPendingPatientChanges() && !hasConfirmedChanges">
+                                <button @click="cancelPendingChanges()"
+                                        class="px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-700 rounded-md text-sm transition-colors">
+                                    Cancel
+                                </button>
+                            </template>
+
+                        </div>
+
+                        <button @click="closeSettingsPanel()"
+                                class="px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-900 rounded-md text-sm transition-colors">
+                            Close
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <!-- Patient Characteristics -->
+                        <div class="bg-white dark:bg-zinc-800 rounded-lg shadow-lg p-4">
+                            <h2 class="text-base font-semibold text-zinc-900 dark:text-white mb-3">Patient
+                                Characteristics</h2>
+
+                            <!-- Patient Presets -->
+                            <div class="mb-3 pb-3 border-b border-zinc-200 dark:border-zinc-700">
+                                <p class="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Presets:</p>
+                                <div class="flex flex-wrap gap-1">
+                                    <button @click="pendingPatient.compliance = 30; pendingPatient.resistance = 15"
+                                            class="px-2 py-1 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900 dark:hover:bg-amber-800 text-amber-800 dark:text-amber-200 text-xs font-medium rounded transition-colors">
+                                        ARDS Mild
+                                    </button>
+                                    <button @click="pendingPatient.compliance = 25; pendingPatient.resistance = 15"
+                                            class="px-2 py-1 bg-orange-100 hover:bg-orange-200 dark:bg-orange-900 dark:hover:bg-orange-800 text-orange-800 dark:text-orange-200 text-xs font-medium rounded transition-colors">
+                                        ARDS Mod
+                                    </button>
+                                    <button @click="pendingPatient.compliance = 20; pendingPatient.resistance = 15"
+                                            class="px-2 py-1 bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800 text-red-800 dark:text-red-200 text-xs font-medium rounded transition-colors">
+                                        ARDS Severe
+                                    </button>
+                                    <button
+                                        @click="pendingPatient.compliance = 60; pendingPatient.resistance = 22; pendingPatient.flowLimitationEnabled = true; pendingPatient.flowLimitSeverity = 'moderate'; applyFlowLimitPreset()"
+                                        class="px-2 py-1 bg-purple-100 hover:bg-purple-200 dark:bg-purple-900 dark:hover:bg-purple-800 text-purple-800 dark:text-purple-200 text-xs font-medium rounded transition-colors">
+                                        COPD
+                                    </button>
+                                    <button
+                                        @click="pendingPatient.compliance = 40; pendingPatient.resistance = 30; pendingPatient.flowLimitationEnabled = true; pendingPatient.flowLimitSeverity = 'severe'; applyFlowLimitPreset()"
+                                        class="px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 text-xs font-medium rounded transition-colors">
+                                        Asthma
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Patient Demographics (for PBW calculation) -->
+                            <div class="mb-3 pb-3 border-b border-zinc-200 dark:border-zinc-700">
+                                <p class="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Patient
+                                    Demographics (optional):</p>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <!-- Sex -->
+                                    <div>
+                                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">Sex</label>
+                                        <select x-model="pendingPatient.patientSex"
+                                                class="w-full px-2 py-1.5 text-sm border border-zinc-300 dark:border-zinc-600 rounded-md bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
+                                            <option :value="null">--</option>
+                                            <option value="M">Male</option>
+                                            <option value="F">Female</option>
+                                        </select>
+                                    </div>
+                                    <!-- Height -->
+                                    <div>
+                                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                            Height: <span x-text="pendingPatient.patientHeight || '--'"></span> cm
+                                        </label>
+                                        <input type="range" x-model.number="pendingPatient.patientHeight" min="140"
+                                               max="210" step="1"
+                                               class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                    </div>
+                                </div>
+                                <!-- PBW Display -->
+                                <template x-if="pendingPatient.patientSex && pendingPatient.patientHeight >= 100">
+                                    <p class="text-xs text-zinc-600 dark:text-zinc-400 mt-2">
+                                        <span class="font-medium">Predicted Body Weight:</span>
+                                        <span
+                                            x-text="calculatePBW(pendingPatient.patientSex, pendingPatient.patientHeight)"></span>
+                                        kg
+                                    </p>
+                                </template>
+                            </div>
+
+                            <div class="space-y-3">
+                                <!-- Compliance -->
+                                <div>
+                                    <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                        Compliance: <span x-text="pendingPatient.compliance"></span> mL/cmH₂O
+                                    </label>
+                                    <input type="range" x-model.number="pendingPatient.compliance" min="1" max="100"
+                                           step="1"
+                                           class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                        <span x-text="getComplianceStatus()"></span>
+                                    </p>
+                                </div>
+
+                                <!-- Resistance -->
+                                <div>
+                                    <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                        Resistance: <span x-text="pendingPatient.resistance"></span> cmH₂O/L/s
+                                    </label>
+                                    <input type="range" x-model.number="pendingPatient.resistance" min="1" max="80"
+                                           step="1"
+                                           class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                        <span x-text="getResistanceStatus()"></span>
+                                    </p>
+                                </div>
+
+                                <!-- Time Constant Display -->
+                                <div>
+                                    <p class="text-xs text-zinc-700 dark:text-zinc-300">
+                                        <span class="font-medium">Time Constant (τ):</span>
+                                        <span x-text="calculateTimeConstant().toFixed(2)"></span> seconds
+                                    </p>
+                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                        95% equilibration: <span
+                                            x-text="(calculateTimeConstant() * 3).toFixed(2)"></span>s
+                                    </p>
+                                </div>
+
+                                <!-- Elastic Recoil -->
+                                <div class="space-y-2 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+                                    <div class="flex items-center justify-between">
+                                        <p class="text-xs font-semibold text-zinc-700 dark:text-zinc-300">Elastic
+                                            Recoil</p>
+                                        <label class="flex items-center"
+                                               :class="pendingPatient.spontaneousBreathingEnabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'">
+                                            <input type="checkbox" x-model="pendingPatient.elastanceRecoilEnabled"
+                                                   :disabled="pendingPatient.spontaneousBreathingEnabled"
+                                                   class="w-4 h-4 text-blue-600 bg-zinc-100 border-zinc-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-zinc-800 focus:ring-2 dark:bg-zinc-700 dark:border-zinc-600">
+                                            <span class="ml-2 text-xs text-zinc-600 dark:text-zinc-400">
+                                <span
+                                    x-show="pendingPatient.spontaneousBreathingEnabled">(On with Spont Breathing)</span>
+                                <span x-show="!pendingPatient.spontaneousBreathingEnabled">Enable</span>
+                            </span>
+                                        </label>
+                                    </div>
+                                    <div x-show="pendingPatient.elastanceRecoilEnabled">
+                                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                            Recoil Strength: <span x-text="pendingPatient.recoilStrength"></span>%
+                                        </label>
+                                        <input type="range" x-model.number="pendingPatient.recoilStrength" min="0"
+                                               max="50" step="5"
+                                               class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                            Higher = sharper peak exp flow spike and pressure recoil during
+                                            P<sub>mus</sub> relaxation.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Recruited Volume (for recruitability maneuver) -->
+                                <div>
+                                    <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                        Recruited Volume: <span x-text="pendingPatient.recruitedVolume"></span> mL
+                                    </label>
+                                    <input type="range" x-model.number="pendingPatient.recruitedVolume" min="0"
+                                           max="500" step="10"
+                                           class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                        Additional volume released when PEEP decreases from ≥15
+                                    </p>
+                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                        (useful for teaching the recruitability maneuver to calculate <a
+                                            class="text-blue-600 dark:text-blue-400"
+                                            href="https://rtmaven.com/ri-ratio">R/I ratio</a>)
+                                    </p>
+                                </div>
+
+                                <!-- Spontaneous Breathing Controls -->
+                                <div class="space-y-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+                                    <!-- Airway Opening Pressure - Only for control modes without spontaneous breathing -->
+                                    <div
+                                        x-show="pendingSettings.mode !== 'pressure_support' && !pendingPatient.spontaneousBreathingEnabled">
+                                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                            Airway Opening Pressure: <span
+                                                x-text="pendingPatient.airwayOpeningPressure"></span> cmH<sub>2</sub>O
+                                        </label>
+                                        <input type="range" x-model.number="pendingPatient.airwayOpeningPressure"
+                                               min="0" max="20" step="1"
+                                               class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                            <span x-show="pendingPatient.airwayOpeningPressure === 0">Normal airways (no closure)</span>
+                                            <span x-show="pendingPatient.airwayOpeningPressure > 0">Simulates airway closure</span>
+                                        </p>
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                            (useful for teaching how to check for <a
+                                                class="text-blue-600 dark:text-blue-400"
+                                                href="https://rtmaven.com/ri-ratio">Airway Closure</a>)
+                                        </p>
+                                    </div>
+
+                                    <!-- Stress Index - Only for Volume Control with constant flow -->
+                                    <div
+                                        x-show="pendingSettings.mode === 'volume_control' && pendingSettings.flowPattern === 'constant'">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <p class="text-xs font-semibold text-zinc-700 dark:text-zinc-300">Stress
+                                                Index Abnormality</p>
+                                            <label class="flex items-center cursor-pointer">
+                                                <input type="checkbox" x-model="pendingPatient.stressIndexEnabled"
+                                                       @change="if (!pendingPatient.stressIndexEnabled) { pendingPatient.stressIndex = 1.0; } else { pendingPatient.stressIndex = 0.8; } pendingPatient.stressIndexPreviousPeep = pendingSettings.peep;"
+                                                       class="w-4 h-4 text-blue-600 bg-zinc-100 border-zinc-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-zinc-800 focus:ring-2 dark:bg-zinc-700 dark:border-zinc-600">
+                                                <span
+                                                    class="ml-2 text-xs text-zinc-600 dark:text-zinc-400">Enable</span>
+                                            </label>
+                                        </div>
+                                        <div x-show="pendingPatient.stressIndexEnabled">
+                                            <label
+                                                class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                                Stress Index: <span>1.00</span>
+                                            </label>
+                                            <input type="range" x-model.number="pendingPatient.stressIndex" min="0.7" max="1.3"
+                                                   step="0.05"
+                                                   x-on:input="pendingPatient.stressIndex = parseFloat($event.target.value); pendingPatient.stressIndexPreviousPeep = pendingSettings.peep;"
+                                                   class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                            <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                                                                                    <span class="text-green-600 dark:text-green-400">SI 0.9-1.1: Normal (linear rise)</span>
+                                                                                            </p>
+                                            <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-1 italic">
+                                                Titrating PEEP will affect the stress index
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <!-- Upper Inflection Point - Only for Pressure-based modes -->
+                                    <div
+                                        x-show="pendingSettings.mode === 'pressure_control' || pendingSettings.mode === 'prvc' || pendingSettings.mode === 'pressure_support'">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <p class="text-xs font-semibold text-zinc-700 dark:text-zinc-300">Upper
+                                                Inflection Point</p>
+                                            <label class="flex items-center cursor-pointer">
+                                                <input type="checkbox" x-model="pendingPatient.upperInflectionEnabled"
+                                                       @change="if (!pendingPatient.upperInflectionEnabled) { pendingPatient.upperInflectionPoint = 30; }"
+                                                       class="w-4 h-4 text-blue-600 bg-zinc-100 border-zinc-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-zinc-800 focus:ring-2 dark:bg-zinc-700 dark:border-zinc-600">
+                                                <span
+                                                    class="ml-2 text-xs text-zinc-600 dark:text-zinc-400">Enable</span>
+                                            </label>
+                                        </div>
+                                        <div x-show="pendingPatient.upperInflectionEnabled">
+                                            <label
+                                                class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                                UIP Threshold: <span>30</span> cmH₂O
+                                            </label>
+                                            <input type="range" x-model.number="pendingPatient.upperInflectionPoint" min="20" max="40"
+                                                   step="1"
+                                                   x-on:input="pendingPatient.upperInflectionPoint = parseInt($event.target.value)"
+                                                   class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                            <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                                                                                    <span class="text-amber-600 dark:text-amber-400">Moderate UIP: Compliance reduction at higher pressures</span>
+                                                                                            </p>
+                                            <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-1 italic">
+                                                Alveolar pressure above this threshold reduces effective compliance
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <!-- Reverse Triggering Entrainment (Control modes only) -->
+                                    <div x-show="pendingSettings.mode !== 'pressure_support'"
+                                         class="space-y-2 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+                                        <div class="flex items-center justify-between">
+                                            <p class="text-xs font-semibold text-zinc-700 dark:text-zinc-300">Reverse
+                                                Triggering</p>
+                                            <label class="flex items-center cursor-pointer">
+                                                <input type="checkbox" x-model="pendingPatient.entrainmentEnabled"
+                                                       @change="if (pendingPatient.entrainmentEnabled) {
+                                       pendingPatient.spontaneousBreathingEnabled = true;
+                                       pendingPatient.pmusAmplitude = 8;
+                                       pendingPatient.pmusOffset = -0.5;
+                                       pendingPatient.airwayOpeningPressure = 0;
+                                   }"
+                                                       class="w-4 h-4 text-purple-600 bg-zinc-100 border-zinc-300 rounded focus:ring-purple-500 dark:focus:ring-purple-600 dark:ring-offset-zinc-800 focus:ring-2 dark:bg-zinc-700 dark:border-zinc-600">
+                                                <span class="ml-2 text-xs text-zinc-600 dark:text-zinc-400">Enable Entrainment</span>
+                                            </label>
+                                        </div>
+
+                                        <!-- Entrainment Ratio -->
+                                        <div x-show="pendingPatient.entrainmentEnabled">
+                                            <label
+                                                class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">Entrainment
+                                                Ratio</label>
+                                            <select x-model="pendingPatient.entrainmentRatio"
+                                                    class="w-full px-2 py-1.5 text-sm border border-zinc-300 dark:border-zinc-600 rounded-md bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
+                                                <option value="1:1">1:1 (every breath)</option>
+                                                <option value="1:2">1:2 (every 2nd breath)</option>
+                                                <option value="1:3">1:3 (every 3rd breath)</option>
+                                            </select>
+                                            <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                                Patient effort entrained to every N<sup>th</sup> mandatory breath
+                                            </p>
+                                        </div>
+
+                                        <!-- Entrainment Info -->
+                                        <div x-show="pendingPatient.entrainmentEnabled"
+                                             class="bg-purple-50 dark:bg-purple-900/20 rounded-md p-2">
+                                            <p class="text-xs text-purple-700 dark:text-purple-300">
+                                                <span class="font-medium">Reverse triggering:</span> Machine breath
+                                                triggers patient effort (Pmus occurs after breath onset).
+                                                Breath-stacked breaths are ignored.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center justify-between">
+                                        <p class="text-xs font-semibold text-zinc-700 dark:text-zinc-300">Spontaneous
+                                            Breathing</p>
+                                        <label class="flex items-center"
+                                               :class="(pendingSettings.mode === 'pressure_support' || pendingSettings.mode === 'pav_plus') ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'">
+                                            <input type="checkbox" x-model="pendingPatient.spontaneousBreathingEnabled"
+                                                   :disabled="pendingSettings.mode === 'pressure_support' || pendingSettings.mode === 'pav_plus'"
+                                                   @change="if (!pendingPatient.spontaneousBreathingEnabled) { pendingPatient.pmusAmplitude = 0; } else { pendingPatient.pmusAmplitude = 8; pendingPatient.airwayOpeningPressure = 0; }"
+                                                   class="w-4 h-4 text-blue-600 bg-zinc-100 border-zinc-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-zinc-800 focus:ring-2 dark:bg-zinc-700 dark:border-zinc-600">
+                                            <span class="ml-2 text-xs text-zinc-600 dark:text-zinc-400">
+                                <span x-show="pendingSettings.mode === 'pressure_support'">(Always On for PS)</span>
+                                <span x-show="pendingSettings.mode === 'pav_plus'">(Always On for PAV)</span>
+                                <span x-show="pendingSettings.mode !== 'pressure_support' && pendingSettings.mode !== 'pav_plus'">Enable</span>
+                            </span>
+                                        </label>
+                                    </div>
+
+                                    <!-- Spontaneous Rate -->
+                                    <div x-show="pendingPatient.spontaneousBreathingEnabled">
+                                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                            Spontaneous Rate: <span x-text="pendingPatient.spontaneousRate"></span> /min
+                                        </label>
+                                        <input type="range" x-model.number="pendingPatient.spontaneousRate" min="0"
+                                               max="60" step="1"
+                                               class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                    </div>
+
+                                    <!-- Pmus Amplitude -->
+                                    <div x-show="pendingPatient.spontaneousBreathingEnabled">
+                                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                            <span>P<sub>mus</sub>: <span x-text="pendingPatient.pmusAmplitude"></span> cmH₂O
+                                                <span x-show="pendingPatient.responsivePmus && (patient.baselinePmusAmplitude || 0) > 0"
+                                                      class="font-normal italic text-zinc-400 dark:text-zinc-500"
+                                                      x-text="'· currently ' + ((patient.baselinePmusAmplitude || 0) * (unloadFactor || 1)).toFixed(1)"></span>
+                                            </span>
+                                        </label>
+                                        <input type="range" x-model.number="pendingPatient.pmusAmplitude" min="0"
+                                               max="25" step="1"
+                                               class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                        <div class="flex items-center justify-between mt-1">
+                                            <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                                                Peak inspiratory effort
+                                            </p>
+                                            <label class="flex items-center cursor-pointer">
+                                                <input type="checkbox" x-model="pendingPatient.responsivePmus"
+                                                       class="w-3 h-3 text-blue-600 bg-zinc-100 border-zinc-300 rounded focus:ring-blue-500 dark:bg-zinc-700 dark:border-zinc-600">
+                                                <span
+                                                    class="ml-1 text-xs text-zinc-500 dark:text-zinc-400">Responsive</span>
+                                            </label>
+                                        </div>
+                                        <!-- Task 7: relabeled responsiveness slider (work-share model) -->
+                                        <div x-show="pendingPatient.responsivePmus"
+                                             class="mt-2 pl-4">
+                                            <div class="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                                                <span>Responsiveness:
+                                                    <span class="font-mono font-semibold"
+                                                          x-text="pendingPatient.responsivePmusSensitivity"></span>%
+                                                </span>
+                                            </div>
+                                            <input type="range" x-model.number="pendingPatient.responsivePmusSensitivity" min="10"
+                                                   max="100" step="5"
+                                                   class="w-full h-1 bg-zinc-200 dark:bg-zinc-700 rounded appearance-none cursor-pointer">
+                                            <div class="flex justify-between text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+                                                <span>Low (e.g. anxious / agitated)</span>
+                                                <span>High (relaxes quickly)</span>
+                                            </div>
+                                            <div class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1 italic">
+                                                Patient unloads as ventilator does more work; effort grows when support drops.
+                                                Amplitude, rise, hold, and decay all scale together. Baseline anchors at current
+                                                support level when toggled on or when Pmus is edited.
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Pmus Shape (Rise / Hold / Decay) -->
+                                    <div x-show="pendingPatient.spontaneousBreathingEnabled"
+                                         x-data="{ pmusAdvancedOpen: false }">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                                                P<sub>mus</sub> Shape
+                                                <span class="text-zinc-400 dark:text-zinc-500">
+                                                    (Total: <span x-text="(pendingPatient.pmusDuration ?? 0).toFixed(2)"></span> s<span
+                                                        x-show="pendingPatient.responsivePmus && (patient.baselinePmusAmplitude || 0) > 0"
+                                                        class="italic"
+                                                        x-text="' · currently ' + (patient.pmusDuration ?? 0).toFixed(2) + ' s'"></span>)
+                                                </span>
+                                            </label>
+                                        </div>
+
+                                        <!-- Rise -->
+                                        <label class="block text-xs text-zinc-600 dark:text-zinc-400 mt-1">
+                                            Rise (T<sub>rise</sub>):
+                                            <span x-text="(pendingPatient.pmusRiseTime ?? 0).toFixed(2)"></span> s
+                                        </label>
+                                        <input type="range" x-model.number="pendingPatient.pmusRiseTime"
+                                               min="0.10" max="1.00" step="0.01"
+                                               class="w-full h-3 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+
+                                        <!-- Hold -->
+                                        <label class="block text-xs text-zinc-600 dark:text-zinc-400 mt-1">
+                                            Hold (T<sub>hold</sub>):
+                                            <span x-text="(pendingPatient.pmusHoldTime ?? 0).toFixed(2)"></span> s
+                                            <span x-show="pendingPatient.responsivePmus && (patient.baselinePmusAmplitude || 0) > 0 && (patient.baselineHoldTime || 0) > 0"
+                                                  class="font-normal italic text-zinc-400 dark:text-zinc-500"
+                                                  x-text="'· currently ' + ((patient.baselineHoldTime || 0) * Math.max(0.1, unloadFactor || 1)).toFixed(2) + ' s'"></span>
+                                        </label>
+                                        <input type="range" x-model.number="pendingPatient.pmusHoldTime"
+                                               min="0" max="1.00" step="0.01"
+                                               class="w-full h-3 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+
+                                        <!-- Decay -->
+                                        <label class="block text-xs text-zinc-600 dark:text-zinc-400 mt-1">
+                                            Decay (T<sub>decay</sub>, PIIA):
+                                            <span x-text="(pendingPatient.pmusDecayTime ?? 0).toFixed(2)"></span> s
+                                            <span x-show="pendingPatient.responsivePmus && (patient.baselineDecayTime || 0) > 0"
+                                                  class="font-normal italic text-zinc-400 dark:text-zinc-500"
+                                                  x-text="'· currently ' + ((patient.baselineDecayTime || 0) * Math.max(0.1, unloadFactor || 1)).toFixed(2) + ' s'"></span>
+                                        </label>
+                                        <input type="range" x-model.number="pendingPatient.pmusDecayTime"
+                                               min="0.10" max="1.50" step="0.01"
+                                               class="w-full h-3 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+
+                                        <!-- Advanced disclosure -->
+                                        <button type="button" @click="pmusAdvancedOpen = !pmusAdvancedOpen"
+                                                class="mt-2 text-xs text-blue-600 dark:text-blue-400 hover:underline">
+                                            <span x-show="!pmusAdvancedOpen">▸ Advanced shape options</span>
+                                            <span x-show="pmusAdvancedOpen">▾ Hide advanced</span>
+                                        </button>
+
+                                        <div x-show="pmusAdvancedOpen"
+                                             class="mt-2 pl-2 border-l-2 border-zinc-200 dark:border-zinc-700 space-y-2">
+                                            <!-- Rise shape -->
+                                            <div>
+                                                <label class="block text-xs text-zinc-600 dark:text-zinc-400 mb-0.5">Rise shape</label>
+                                                <select x-model="pendingPatient.pmusRiseShape"
+                                                        class="text-xs bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded px-1 py-0.5">
+                                                    <option value="linear">Linear</option>
+                                                    <option value="smoothstep">Smoothstep</option>
+                                                    <option value="half-cosine">Half-cosine</option>
+                                                </select>
+                                            </div>
+
+                                            <!-- Decay shape -->
+                                            <div>
+                                                <label class="block text-xs text-zinc-600 dark:text-zinc-400 mb-0.5">Decay shape</label>
+                                                <select x-model="pendingPatient.pmusDecayShape"
+                                                        class="text-xs bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded px-1 py-0.5">
+                                                    <option value="smoothstep">Smoothstep (smoothest)</option>
+                                                    <option value="half-cosine">Half-cosine</option>
+                                                    <option value="exponential">Exponential</option>
+                                                </select>
+                                            </div>
+
+                                            <!-- Rate coupling -->
+                                            <div>
+                                                <label class="flex items-center cursor-pointer text-xs text-zinc-600 dark:text-zinc-400">
+                                                    <input type="checkbox" x-model="pendingPatient.pmusRateCoupling"
+                                                           class="w-3 h-3 mr-1 text-blue-600 bg-zinc-100 border-zinc-300 rounded focus:ring-blue-500 dark:bg-zinc-700 dark:border-zinc-600">
+                                                    Shorten timing at high RR
+                                                </label>
+                                                <div x-show="pendingPatient.pmusRateCoupling" class="mt-1 pl-4">
+                                                    <label class="block text-xs text-zinc-500 dark:text-zinc-500">
+                                                        Threshold:
+                                                        <span x-text="pendingPatient.pmusRateCouplingThreshold"></span> bpm
+                                                    </label>
+                                                    <input type="range" x-model.number="pendingPatient.pmusRateCouplingThreshold"
+                                                           min="15" max="40" step="1"
+                                                           class="w-full h-3 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                                </div>
+                                            </div>
+
+                                        </div>
+
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
+                                            Pmus rises over T<sub>rise</sub>, holds at peak (T<sub>hold</sub>), then decays
+                                            (PIIA) over T<sub>decay</sub>. Decay continues into early expiration.
+                                        </p>
+                                    </div>
+
+                                    <!-- Pmus Offset -->
+                                    <div x-show="pendingPatient.spontaneousBreathingEnabled">
+                                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                            P<sub>mus</sub> Offset: <span
+                                                x-text="pendingPatient.pmusOffset.toFixed(2)"></span> sec
+                                        </label>
+                                        <input type="range" x-model.number="pendingPatient.pmusOffset" min="-3" max="3"
+                                               step="0.05"
+                                               class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                            <span x-show="pendingPatient.pmusOffset > 0">Cycle shifted forward (+<span
+                                                    x-text="pendingPatient.pmusOffset.toFixed(2)"></span>s)</span>
+                                            <span x-show="pendingPatient.pmusOffset < 0">Cycle shifted backward (<span
+                                                    x-text="pendingPatient.pmusOffset.toFixed(2)"></span>s)</span>
+                                            <span x-show="pendingPatient.pmusOffset === 0">Synchronized</span>
+                                        </p>
+                                    </div>
+
+                                    <!-- Positive Pmus Display -->
+                                    <div x-show="pendingPatient.spontaneousBreathingEnabled"
+                                         class="flex items-center gap-2 mt-2">
+                                        <input type="checkbox" x-model="pendingPatient.positivePmus"
+                                               id="positivePmusCheckbox"
+                                               class="w-4 h-4 text-rose-600 bg-zinc-100 border-zinc-300 rounded focus:ring-rose-500 dark:focus:ring-rose-600 dark:ring-offset-zinc-800 focus:ring-2 dark:bg-zinc-700 dark:border-zinc-600">
+                                        <label for="positivePmusCheckbox"
+                                               class="text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer">
+                                            Pos. P<sub>mus</sub>
+                                        </label>
+                                        <span class="text-xs text-zinc-400 dark:text-zinc-500">(display upward)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        
+                        <div x-show="!isFullscreen" x-cloak class="bg-white dark:bg-zinc-800 rounded-lg shadow-lg p-4">
+                            <!-- Cardiac Oscillations -->
+                            <div class="space-y-2 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+                                <div class="flex items-center justify-between">
+                                    <p class="text-xs font-semibold text-zinc-700 dark:text-zinc-300">Cardiac
+                                        Oscillations</p>
+                                    <label class="flex items-center cursor-pointer">
+                                        <input type="checkbox" x-model="pendingPatient.cardiacOscillationsEnabled"
+                                               class="w-4 h-4 text-rose-600 bg-zinc-100 border-zinc-300 rounded focus:ring-rose-500 dark:focus:ring-rose-600 dark:ring-offset-zinc-800 focus:ring-2 dark:bg-zinc-700 dark:border-zinc-600">
+                                        <span class="ml-2 text-xs text-zinc-600 dark:text-zinc-400">Enable</span>
+                                    </label>
+                                </div>
+
+                                <!-- Heart Rate Slider -->
+                                <div x-show="pendingPatient.cardiacOscillationsEnabled">
+                                    <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                        Heart Rate: <span x-text="pendingPatient.heartRate"></span> bpm
+                                    </label>
+                                    <input type="range" x-model.number="pendingPatient.heartRate" min="50" max="150"
+                                           step="5"
+                                           class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                        Cardiogenic oscillations can auto-trigger with sensitive flow triggers
+                                    </p>
+                                </div>
+
+                                <!-- Cardiac Oscillations Info -->
+                                <div x-show="pendingPatient.cardiacOscillationsEnabled"
+                                     class="bg-rose-50 dark:bg-rose-900/20 rounded-md p-2">
+                                    <p class="text-xs text-rose-700 dark:text-rose-300">
+                                        <span class="font-medium">Cardiac oscillations:</span> Heart beating against
+                                        lungs creates small flow/pressure variations (~4 L/min, ~1 cmH₂O) that can
+                                        trigger breaths with sensitive flow trigger settings.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Natural Variability -->
+                            <div class="space-y-2 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+                                <div class="flex items-center justify-between">
+                                    <p class="text-xs font-semibold text-zinc-700 dark:text-zinc-300">Natural
+                                        Variability</p>
+                                    <label class="flex items-center cursor-pointer">
+                                        <input type="checkbox" x-model="pendingPatient.naturalVariabilityEnabled"
+                                               class="w-4 h-4 text-amber-600 bg-zinc-100 border-zinc-300 rounded focus:ring-amber-500 dark:focus:ring-amber-600 dark:ring-offset-zinc-800 focus:ring-2 dark:bg-zinc-700 dark:border-zinc-600">
+                                        <span class="ml-2 text-xs text-zinc-600 dark:text-zinc-400">Enable</span>
+                                    </label>
+                                </div>
+
+                                <!-- Variability Amount Slider -->
+                                <div x-show="pendingPatient.naturalVariabilityEnabled">
+                                    <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                        Variability: <span
+                                            x-text="(pendingPatient.variabilityAmount * 100).toFixed(0)"></span>%
+                                    </label>
+                                    <input type="range" x-model.number="pendingPatient.variabilityAmount" min="0.05"
+                                           max="0.20" step="0.01"
+                                           class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                        Standard deviation as % of mean (5-20%)
+                                    </p>
+                                </div>
+
+                                <!-- Natural Variability Info -->
+                                <div x-show="pendingPatient.naturalVariabilityEnabled"
+                                     class="bg-amber-50 dark:bg-amber-900/20 rounded-md p-2">
+                                    <p class="text-xs text-amber-700 dark:text-amber-300">
+                                        <span class="font-medium">Breath-to-breath variability:</span> Adds
+                                        Gaussian-distributed noise to compliance, resistance, spontaneous breathing
+                                        rate, and patient effort to simulate real clinical conditions.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Flow Limitation (Obstructive Physiology) -->
+                            <div class="space-y-2 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+                                <div class="flex items-center justify-between">
+                                    <p class="text-xs font-semibold text-zinc-700 dark:text-zinc-300">Expiratory Flow
+                                        Limitation</p>
+                                    <label class="flex items-center cursor-pointer">
+                                        <input type="checkbox" x-model="pendingPatient.flowLimitationEnabled"
+                                               class="w-4 h-4 text-purple-600 bg-zinc-100 border-zinc-300 rounded focus:ring-purple-500 dark:focus:ring-purple-600 dark:ring-offset-zinc-800 focus:ring-2 dark:bg-zinc-700 dark:border-zinc-600">
+                                        <span class="ml-2 text-xs text-zinc-600 dark:text-zinc-400">Enable</span>
+                                    </label>
+                                </div>
+
+                                <!-- Severity Dropdown -->
+                                <div x-show="pendingPatient.flowLimitationEnabled">
+                                    <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                        Severity
+                                    </label>
+                                    <select x-model="pendingPatient.flowLimitSeverity"
+                                            @change="applyFlowLimitPreset()"
+                                            class="w-full px-2 py-1.5 text-sm border border-zinc-300 dark:border-zinc-600 rounded-md bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white focus:ring-purple-500 focus:border-purple-500">
+                                        <option value="mild">Mild (COPD GOLD I-II)</option>
+                                        <option value="moderate">Moderate (COPD GOLD III)</option>
+                                        <option value="severe">Severe (COPD GOLD IV / Asthma)</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                </div>
+
+                                <!-- Preset Parameters Display (read-only for non-custom) -->
+                                <div
+                                    x-show="pendingPatient.flowLimitationEnabled && pendingPatient.flowLimitSeverity !== 'custom'"
+                                    class="bg-zinc-50 dark:bg-zinc-700/50 rounded-md p-2 space-y-1">
+                                    <div class="flex justify-between text-xs">
+                                        <span class="text-zinc-600 dark:text-zinc-400">Critical Closing Pressure:</span>
+                                        <span class="font-medium text-zinc-800 dark:text-zinc-200"
+                                              x-text="pendingPatient.criticalClosingPressure + ' cmH₂O'"></span>
+                                    </div>
+                                    <div class="flex justify-between text-xs">
+                                        <span class="text-zinc-600 dark:text-zinc-400">Flow Conductance (k):</span>
+                                        <span class="font-medium text-zinc-800 dark:text-zinc-200"
+                                              x-text="pendingPatient.flowLimitK"></span>
+                                    </div>
+                                    <div class="flex justify-between text-xs">
+                                        <span class="text-zinc-600 dark:text-zinc-400">PEEP Stenting Effect:</span>
+                                        <span class="font-medium text-zinc-800 dark:text-zinc-200"
+                                              x-text="(pendingPatient.peepStentingFactor * 100).toFixed(0) + '%'"></span>
+                                    </div>
+                                </div>
+
+                                <!-- Critical Closing Pressure (editable for custom) -->
+                                <div
+                                    x-show="pendingPatient.flowLimitationEnabled && pendingPatient.flowLimitSeverity === 'custom'">
+                                    <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                        Critical Closing Pressure: <span
+                                            x-text="pendingPatient.criticalClosingPressure"></span> cmH₂O
+                                    </label>
+                                    <input type="range" x-model.number="pendingPatient.criticalClosingPressure" min="1"
+                                           max="15" step="1"
+                                           class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                        Pressure below which airways collapse
+                                    </p>
+                                </div>
+
+                                <!-- Flow Conductance (editable for custom) -->
+                                <div
+                                    x-show="pendingPatient.flowLimitationEnabled && pendingPatient.flowLimitSeverity === 'custom'">
+                                    <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                        Flow Conductance (k): <span x-text="pendingPatient.flowLimitK"></span>
+                                    </label>
+                                    <input type="range" x-model.number="pendingPatient.flowLimitK" min="3" max="20"
+                                           step="1"
+                                           class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                        Higher = less flow limitation
+                                    </p>
+                                </div>
+
+                                <!-- PEEP Stenting Factor (editable for custom) -->
+                                <div
+                                    x-show="pendingPatient.flowLimitationEnabled && pendingPatient.flowLimitSeverity === 'custom'">
+                                    <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                        PEEP Stenting Effect: <span
+                                            x-text="(pendingPatient.peepStentingFactor * 100).toFixed(0)"></span>%
+                                    </label>
+                                    <input type="range" x-model.number="pendingPatient.peepStentingFactor" min="0.5"
+                                           max="1.0" step="0.05"
+                                           class="w-full h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                        How effectively PEEP prevents airway collapse
+                                    </p>
+                                </div>
+
+                                <!-- Flow Limitation Info -->
+                                <div x-show="pendingPatient.flowLimitationEnabled"
+                                     class="bg-purple-50 dark:bg-purple-900/20 rounded-md p-2">
+                                    <p class="text-xs text-purple-700 dark:text-purple-300">
+                                        <span class="font-medium">Obstructive physiology:</span> Airways collapse during
+                                        expiration, creating flow limitation and auto-PEEP. Increase external PEEP to
+                                        stent airways open and reduce air trapping.
+                                    </p>
+                                </div>
+                            </div>
+                                                                                                                </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mobile Waveform Controls (shown only on mobile, above waveforms) -->
+            <div class="flex md:hidden items-center justify-center gap-3 mb-3">
+                <div class="flex items-center gap-1 bg-white dark:bg-zinc-800 rounded-lg px-2 py-1.5 shadow">
+                    <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">Size:</label>
+                    <input type="range" x-model.number="waveformHeight" min="100" max="400" step="50"
+                           class="w-16 h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                    <span class="text-xs text-zinc-600 dark:text-zinc-400 w-8" x-text="waveformHeight + 'px'"></span>
+                </div>
+                <div class="flex items-center gap-1 bg-white dark:bg-zinc-800 rounded-lg px-2 py-1.5 shadow">
+                    <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">Time:</label>
+                    <input type="range" x-model.number="timeWindow" min="5" max="30" step="1"
+                           class="w-16 h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
+                    <span class="text-xs text-zinc-600 dark:text-zinc-400 w-8" x-text="timeWindow + 's'"></span>
+                </div>
+            </div>
+
+            <!-- Waveforms -->
+            <div class="grid grid-cols-1 gap-4">
+                <!-- Pressure Waveform -->
+                <div class="bg-white dark:bg-zinc-800 rounded-lg shadow-lg p-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <h3 class="text-sm font-semibold text-zinc-900 dark:text-white">Pressure (cmH₂O)<span x-show="crosshairTime !== null" class="font-normal text-blue-600 dark:text-blue-400"> @ <span x-text="crosshairTime?.toFixed(2)"></span>s: <span x-text="crosshairPressure?.toFixed(1)"></span> cmH₂O</span><span x-show="crosshairTime !== null && crosshairPmus !== null" class="font-normal text-red-600 dark:text-red-400">, Pmus: <span x-text="crosshairPmus?.toFixed(1)"></span> cmH₂O</span></h3>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <!-- Freeze Button -->
+                            <button @click="isRunning = !isRunning; Object.values(chartInstances).forEach(c => { if (c) { c.canvas.style.pointerEvents = isRunning ? 'none' : 'auto'; } })"
+                                    class="px-3 py-2 text-sm font-semibold rounded-md transition-colors select-none"
+                                    :class="isRunning ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-600' : 'bg-green-600 text-white hover:bg-green-700'"
+                                    :title="isRunning ? 'Freeze simulation' : 'Resume simulation'">
+                                <span x-text="isRunning ? 'Freeze' : 'Resume'"></span>
+                            </button>
+
+                            <!-- Fullscreen Button -->
+                            <button @click="toggleFullscreen()"
+                                    class="px-2 py-2 text-sm font-semibold rounded-md transition-colors select-none bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-600"
+                                    :title="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'">
+                                <!-- Expand icon (when not fullscreen) -->
+                                <svg x-show="!isFullscreen" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5"
+                                     fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                          d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+                                </svg>
+                                <!-- Collapse icon (when fullscreen) -->
+                                <svg x-show="isFullscreen" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5"
+                                     fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                          d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25"/>
+                                </svg>
+                            </button>
+
+                            <!-- Pause Maneuver Buttons -->
+                            <div class="flex items-center gap-1">
+                                <div class="relative">
+                                    <button
+                                        @mousedown="expiratoryPauseActive = false; inspiratoryPauseActive = true; inspiratoryPauseRequested = true; breathIdWhenInspPauseRequested = currentBreathId; pauseStartTime = currentTime; pauseDuration = 0; pauseVolumeAtStart = currentMetrics.volume; pausePressureAtStart = currentMetrics.pressure"
+                                        @mouseup="inspiratoryPauseActive = false; inspiratoryPauseRequested = false; breathIdWhenInspPauseRequested = null; pauseDuration = 0"
+                                        @mouseleave="inspiratoryPauseActive = false; inspiratoryPauseRequested = false; breathIdWhenInspPauseRequested = null; pauseDuration = 0"
+                                        @touchstart="expiratoryPauseActive = false; inspiratoryPauseActive = true; inspiratoryPauseRequested = true; breathIdWhenInspPauseRequested = currentBreathId; pauseStartTime = currentTime; pauseDuration = 0; pauseVolumeAtStart = currentMetrics.volume; pausePressureAtStart = currentMetrics.pressure"
+                                        @touchend="inspiratoryPauseActive = false; inspiratoryPauseRequested = false; breathIdWhenInspPauseRequested = null; pauseDuration = 0"
+                                        @touchcancel="inspiratoryPauseActive = false; inspiratoryPauseRequested = false; breathIdWhenInspPauseRequested = null; pauseDuration = 0"
+                                        class="px-3 py-2 text-sm font-semibold rounded-md transition-colors select-none"
+                                        :class="inspiratoryPauseActive ? 'bg-red-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-600'"
+                                        title="Hold to pause at end of inspiration">
+                                        Insp Hold
+                                    </button>
+                                    <div x-show="inspiratoryPauseActive"
+                                         class="absolute top-full mt-1 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-zinc-900 text-white text-xs rounded whitespace-nowrap z-10"
+                                         x-text="pauseDuration.toFixed(2) + 's'">
+                                    </div>
+                                </div>
+                                <div class="relative">
+                                    <button
+                                        @mousedown="inspiratoryPauseActive = false; expiratoryPauseActive = true; expiratoryPauseRequested = true; breathIdWhenExpPauseRequested = currentBreathId; pauseStartTime = currentTime; pauseDuration = 0; pauseVolumeAtStart = currentMetrics.volume; pausePressureAtStart = currentMetrics.pressure"
+                                        @mouseup="expiratoryPauseActive = false; expiratoryPauseRequested = false; breathIdWhenExpPauseRequested = null; pauseDuration = 0"
+                                        @mouseleave="expiratoryPauseActive = false; expiratoryPauseRequested = false; breathIdWhenExpPauseRequested = null; pauseDuration = 0"
+                                        @touchstart="inspiratoryPauseActive = false; expiratoryPauseActive = true; expiratoryPauseRequested = true; breathIdWhenExpPauseRequested = currentBreathId; pauseStartTime = currentTime; pauseDuration = 0; pauseVolumeAtStart = currentMetrics.volume; pausePressureAtStart = currentMetrics.pressure"
+                                        @touchend="expiratoryPauseActive = false; expiratoryPauseRequested = false; breathIdWhenExpPauseRequested = null; pauseDuration = 0"
+                                        @touchcancel="expiratoryPauseActive = false; expiratoryPauseRequested = false; breathIdWhenExpPauseRequested = null; pauseDuration = 0"
+                                        class="px-3 py-2 text-sm font-semibold rounded-md transition-colors select-none"
+                                        :class="expiratoryPauseActive ? 'bg-red-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-600'"
+                                        title="Hold to pause at end of expiration">
+                                        Exp Hold
+                                    </button>
+                                    <div x-show="expiratoryPauseActive"
+                                         class="absolute top-full mt-1 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-zinc-900 text-white text-xs rounded whitespace-nowrap z-10"
+                                         x-text="pauseDuration.toFixed(2) + 's'">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <span
+                                class="text-xs font-medium text-zinc-500 dark:text-zinc-400 hidden sm:inline">Tag:</span>
+                            <span class="px-2 py-1 text-xs font-semibold rounded-md"
+                                  :class="{
+                              'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300': settings.mode === 'pressure_control',
+                              'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300': settings.mode === 'volume_control',
+                              'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300': settings.mode === 'pressure_support',
+                              'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300': settings.mode === 'prvc'
+                          }"
+                                  x-text="{
+                              'pressure_control': 'PC-CMVs',
+                              'volume_control': 'VC-CMVs',
+                              'pressure_support': 'PC-CSVs',
+                              'prvc': 'PC-CMVa'
+                          }[settings.mode]">
+                    </span>
+                            
+                                                            <label x-show="patient.spontaneousBreathingEnabled"
+                                       class="flex items-center gap-1 cursor-pointer">
+                                    <input type="checkbox" x-model="showPmusTrace"
+                                           class="w-3 h-3 text-red-600 bg-zinc-100 border-zinc-300 rounded focus:ring-red-500 dark:bg-zinc-700 dark:border-zinc-600">
+                                    <span class="text-xs text-zinc-600 dark:text-zinc-400"
+                                          x-text="patient.positivePmus ? 'Show Pos. Pmus' : 'Show Neg. Pmus'"></span>
+                                </label>
+                                                        <!-- Trigger marker legend (inline on desktop) -->
+                            <div
+                                class="hidden sm:flex items-center gap-1 ml-2 pl-2 border-l border-zinc-300 dark:border-zinc-600">
+                                <span class="text-red-500 text-sm" style="font-size: 10px;">&#9650;</span>
+                                <span class="text-xs text-zinc-600 dark:text-zinc-400">Triggered</span>
+                            </div>
+                        </div>
+                        <!-- Trigger marker legend (below on mobile) -->
+                        <div class="flex sm:hidden items-center gap-1 w-full justify-end">
+                            <span class="text-red-500 text-sm" style="font-size: 10px;">&#9650;</span>
+                            <span class="text-xs text-zinc-600 dark:text-zinc-400">Triggered</span>
+                        </div>
+                    </div>
+                    <div wire:ignore class="relative" :style="`height: ${waveformHeight}px`">
+                        <canvas id="pressureChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Flow Waveform -->
+                <div class="bg-white dark:bg-zinc-800 rounded-lg shadow-lg p-4">
+                    <h3 class="text-sm font-semibold text-zinc-900 dark:text-white mb-2">Flow (L/min)<span x-show="crosshairTime !== null" class="font-normal text-green-600 dark:text-green-400"> @ <span x-text="crosshairTime?.toFixed(2)"></span>s: <span x-text="crosshairFlow?.toFixed(1)"></span> L/min</span></h3>
+                    <div wire:ignore class="relative" :style="`height: ${waveformHeight}px`">
+                        <canvas id="flowChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Volume Waveform -->
+                <div class="bg-white dark:bg-zinc-800 rounded-lg shadow-lg p-4">
+                    <h3 class="text-sm font-semibold text-zinc-900 dark:text-white mb-2">Volume (mL)<span x-show="crosshairTime !== null" class="font-normal text-amber-600 dark:text-amber-400"> @ <span x-text="crosshairTime?.toFixed(2)"></span>s: <span x-text="crosshairVolume?.toFixed(1)"></span> mL</span></h3>
+                    <div wire:ignore class="relative" :style="`height: ${waveformHeight}px`">
+                        <canvas id="volumeChart"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                        This simulator was created by Thomas Piraino RRT, FCSRT, FAARC and is for education purposes
+                        only.
+                    </p>
+                </div>
+            </div>
+        </div><!-- End Main Content (Waveforms) -->
+
+        <!-- Asynchrony Examples (Hidden in Learner Mode and Fullscreen) -->
+                    <div x-show="!isFullscreen" x-cloak
+                 class="lg:col-span-full bg-white dark:bg-zinc-800 rounded-lg shadow-lg p-3 mt-3 lg:mt-0 text-center">
+                <h3 class="text-xs font-semibold text-zinc-900 dark:text-white mb-2">Asynchrony examples:</h3>
+                <div class="flex flex-wrap justify-center gap-2">
+                    <button @click="loadPresetScenario('reverse-triggering-1-2-pressure')"
+                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
+                        Reverse Triggering (Early Trigger) PC
+                    </button>
+                    <button @click="loadPresetScenario('reverse-triggering-1-2-volume')"
+                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
+                        Reverse Triggering (Early Trigger) VC
+                    </button>
+                    <button @click="loadPresetScenario('ineffective-efforts')"
+                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
+                        Ineffective Efforts (Failed Trigger)
+                    </button>
+                    <button @click="loadPresetScenario('early-cycling')"
+                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
+                        Early Cycling
+                    </button>
+                    <button @click="loadPresetScenario('late-cycling')"
+                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
+                        Late Cycling
+                    </button>
+                    <button @click="loadPresetScenario('breath-stacking')"
+                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
+                        Breath-Stacking
+                    </button>
+                    <button @click="loadPresetScenario('auto-trigger')"
+                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
+                        Auto-trigger (False Trigger)
+                    </button>
+                </div>
+                <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
+                    Note: Reverse triggering (Early Trigger) uses the 'Entrainment' settings under Patient
+                    Characteristics in the Settings panel (only available in control modes).
+                </p>
+            </div>
+        
+    </div><!-- End Two Column Grid -->
+
+    
+                
+</div>
+</body>
+</html>
