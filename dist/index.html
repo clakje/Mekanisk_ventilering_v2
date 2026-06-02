@@ -40,6 +40,7 @@
     <!-- JS Scripts (Deferred to run after DOM loads) -->
     <script src="js/ventilator_simulator.js" defer></script>
     <script src="js/flux.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
     <script type="module" src="js/app.js" defer></script>
 
@@ -338,44 +339,127 @@
             </div>
 
             <!-- Asynchrony Examples Sidebar Card -->
-            <div class="bg-white dark:bg-zinc-800 rounded-lg shadow-lg p-4 flex flex-col gap-2">
+            <div x-data="{ activeInfoBox: null }" class="bg-white dark:bg-zinc-800 rounded-lg shadow-lg p-4 flex flex-col gap-2">
                 <h3 class="text-sm font-bold text-zinc-900 dark:text-white mb-1 border-b border-zinc-100 dark:border-zinc-700 pb-1.5">Asynchrony Examples:</h3>
-                
-                <button @click="loadPresetScenario('reverse-triggering-1-2-pressure')"
-                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
-                    <span>Reverse Triggering (PC)</span>
-                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-                </button>
-                <button @click="loadPresetScenario('reverse-triggering-1-2-volume')"
-                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
-                    <span>Reverse Triggering (VC)</span>
-                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-                </button>
-                <button @click="loadPresetScenario('ineffective-efforts')"
-                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
-                    <span>Ineffective Efforts</span>
-                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-                </button>
-                <button @click="loadPresetScenario('early-cycling')"
-                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
-                    <span>Early Cycling</span>
-                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-                </button>
-                <button @click="loadPresetScenario('late-cycling')"
-                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
-                    <span>Late Cycling</span>
-                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-                </button>
-                <button @click="loadPresetScenario('breath-stacking')"
-                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
-                    <span>Breath-Stacking</span>
-                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-                </button>
-                <button @click="loadPresetScenario('auto-trigger')"
-                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
-                    <span>Auto-trigger</span>
-                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-                </button>
+
+                <!-- 1. Reverse Triggering (PC) -->
+                <div>
+                    <button @click="loadPresetScenario('reverse-triggering-1-2-pressure'); activeInfoBox = activeInfoBox === 'rt-pc' ? null : 'rt-pc'"
+                            :class="activeInfoBox === 'rt-pc' ? 'bg-blue-800 ring-2 ring-blue-400' : 'bg-blue-600 hover:bg-blue-700'"
+                            class="w-full px-4 py-3 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                        <span>Reverse Triggering (PC)</span>
+                        <svg :class="activeInfoBox === 'rt-pc' ? 'rotate-90' : ''" class="w-4 h-4 opacity-75 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                    </button>
+                    <div x-show="activeInfoBox === 'rt-pc'" x-collapse x-cloak
+                         class="mt-1.5 p-3 bg-blue-50 dark:bg-zinc-700/50 border border-blue-200 dark:border-zinc-600 rounded-lg text-xs text-zinc-700 dark:text-zinc-300 space-y-2">
+                        <p><strong class="text-zinc-900 dark:text-white">Hva er dette?</strong> Det er respiratoren som trigger pasienten, ikke pasienten som trigger respiratoren. Hvert andre maskinelle innpust utløser en ufrivillig sammentrekning av pasientens mellomgolv.</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvorfor oppstår det?</strong> Pasienten har en «entrainment ratio» på 1:2. Den faste maskinelle trykkstøtten (PC 15 over PEEP 10) stimulerer respirasjonsenteret til å trekke pusten <em>etter</em> at maskinens innpust allerede har startet (forsinket 0.4 s).</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvordan lese grafene:</strong> Siden vi er i trykkontroll holder maskinen trykket stabilt. Når pasienten trekker inn ekstra (Pmus 10) midt i innpustet, vil V<sub>TE</sub> bli høyere enn forventet.</p>
+                        <p class="pt-1 border-t border-blue-200 dark:border-zinc-600"><strong class="text-emerald-700 dark:text-emerald-400">💡 Tiltak:</strong> Bytt til spontan modus (PS) hvis pasienten har egen pustestasjon. Ved kontrollert ventilering: dypere sedasjon eller justering av maskinens frekvens.</p>
+                    </div>
+                </div>
+
+                <!-- 2. Reverse Triggering (VC) -->
+                <div>
+                    <button @click="loadPresetScenario('reverse-triggering-1-2-volume'); activeInfoBox = activeInfoBox === 'rt-vc' ? null : 'rt-vc'"
+                            :class="activeInfoBox === 'rt-vc' ? 'bg-blue-800 ring-2 ring-blue-400' : 'bg-blue-600 hover:bg-blue-700'"
+                            class="w-full px-4 py-3 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                        <span>Reverse Triggering (VC)</span>
+                        <svg :class="activeInfoBox === 'rt-vc' ? 'rotate-90' : ''" class="w-4 h-4 opacity-75 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                    </button>
+                    <div x-show="activeInfoBox === 'rt-vc'" x-collapse x-cloak
+                         class="mt-1.5 p-3 bg-blue-50 dark:bg-zinc-700/50 border border-blue-200 dark:border-zinc-600 rounded-lg text-xs text-zinc-700 dark:text-zinc-300 space-y-2">
+                        <p><strong class="text-zinc-900 dark:text-white">Hva er dette?</strong> Samme nevrologiske fenomen som over, men konsekvensene på skjermen blir annerledes fordi vi nå er i Volumkontroll (VC).</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvorfor oppstår det?</strong> Maskinen pumper inn nøyaktig 450 ml med fast flow (60 L/min). Når maskinens innblåsing utløser et ufrivillig innpust hos pasienten (Pmus 8), skapes et kraftig undertrykk i brysthulen.</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvordan lese grafene:</strong> Volumet og flowen er fastlåst — pasientens sugekraft fører til et tydelig dropp i luftveistrykket. Se etter en dyp «grop» (scooping) i trykkurven. PIP synker i Measurements.</p>
+                        <p class="pt-1 border-t border-blue-200 dark:border-zinc-600"><strong class="text-emerald-700 dark:text-emerald-400">💡 Tiltak:</strong> Møt pasientens flow-behov ved å bytte til trykkontroll (PC), eller la dem styre pusten selv i en støttemodus.</p>
+                    </div>
+                </div>
+
+                <!-- 3. Ineffective Efforts -->
+                <div>
+                    <button @click="loadPresetScenario('ineffective-efforts'); activeInfoBox = activeInfoBox === 'ineff' ? null : 'ineff'"
+                            :class="activeInfoBox === 'ineff' ? 'bg-blue-800 ring-2 ring-blue-400' : 'bg-blue-600 hover:bg-blue-700'"
+                            class="w-full px-4 py-3 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                        <span>Ineffective Efforts</span>
+                        <svg :class="activeInfoBox === 'ineff' ? 'rotate-90' : ''" class="w-4 h-4 opacity-75 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                    </button>
+                    <div x-show="activeInfoBox === 'ineff'" x-collapse x-cloak
+                         class="mt-1.5 p-3 bg-blue-50 dark:bg-zinc-700/50 border border-blue-200 dark:border-zinc-600 rounded-lg text-xs text-zinc-700 dark:text-zinc-300 space-y-2">
+                        <p><strong class="text-zinc-900 dark:text-white">Hva er dette?</strong> Pasienten forsøker å puste inn, men klarer ikke å «vekke» respiratoren til å gi et pust. Innsatsen er bortkastet.</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvorfor oppstår det?</strong> Høy trykkstøtte (PS 20) kombinert med høy motstand og høy compliance gjør at det tar lang tid å tømme lungene. Pasienten puster raskt (RR 24), men Auto-PEEP bygges opp. Pasientens svake innpust (Pmus 4) klarer ikke å overvinne Auto-PEEPen for å trigge flow-sensoren (2 L/min).</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvordan lese grafene:</strong> RR i Measurements er lavere enn pasientens reelle pustefrekvens. På flow-kurven ser du små «humper» opp mot nullinjen i utpustsfasen uten at maskinen gir luft.</p>
+                        <p class="pt-1 border-t border-blue-200 dark:border-zinc-600"><strong class="text-emerald-700 dark:text-emerald-400">💡 Tiltak:</strong> Reduser trykkstøtten, forleng utpuststiden, eller øk ekstern PEEP forsiktig for å utligne Auto-PEEPen og gjøre triggeren lettere å nå.</p>
+                    </div>
+                </div>
+
+                <!-- 4. Early Cycling -->
+                <div>
+                    <button @click="loadPresetScenario('early-cycling'); activeInfoBox = activeInfoBox === 'early' ? null : 'early'"
+                            :class="activeInfoBox === 'early' ? 'bg-blue-800 ring-2 ring-blue-400' : 'bg-blue-600 hover:bg-blue-700'"
+                            class="w-full px-4 py-3 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                        <span>Early Cycling</span>
+                        <svg :class="activeInfoBox === 'early' ? 'rotate-90' : ''" class="w-4 h-4 opacity-75 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                    </button>
+                    <div x-show="activeInfoBox === 'early'" x-collapse x-cloak
+                         class="mt-1.5 p-3 bg-blue-50 dark:bg-zinc-700/50 border border-blue-200 dark:border-zinc-600 rounded-lg text-xs text-zinc-700 dark:text-zinc-300 space-y-2">
+                        <p><strong class="text-zinc-900 dark:text-white">Hva er dette?</strong> Respiratoren slår over til utpust mens pasienten fortsatt er i full gang med å puste inn.</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvorfor oppstår det?</strong> I dette trykkontrollerte moduset har maskinen en kort I-tid på 0.7 s. Pasientens hjerne sender signaler om å fortsette innpustet i hele 1.1 s.</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvordan lese grafene:</strong> Maskinen stenger trykket, men pasienten «suger» fortsatt. I trykkurven faller trykket mot PEEP, men i flow-kurven ser du en kort forsinkelse (en «bule») før flowen blir negativ.</p>
+                        <p class="pt-1 border-t border-blue-200 dark:border-zinc-600"><strong class="text-emerald-700 dark:text-emerald-400">💡 Tiltak:</strong> Forleng I-tiden for å matche pasientens nevrale innpuststid, eller bytt til PS med Flow Cycle slik at pusten avsluttes basert på pasientens eget flow-mønster.</p>
+                    </div>
+                </div>
+
+                <!-- 5. Late Cycling -->
+                <div>
+                    <button @click="loadPresetScenario('late-cycling'); activeInfoBox = activeInfoBox === 'late' ? null : 'late'"
+                            :class="activeInfoBox === 'late' ? 'bg-blue-800 ring-2 ring-blue-400' : 'bg-blue-600 hover:bg-blue-700'"
+                            class="w-full px-4 py-3 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                        <span>Late Cycling</span>
+                        <svg :class="activeInfoBox === 'late' ? 'rotate-90' : ''" class="w-4 h-4 opacity-75 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                    </button>
+                    <div x-show="activeInfoBox === 'late'" x-collapse x-cloak
+                         class="mt-1.5 p-3 bg-blue-50 dark:bg-zinc-700/50 border border-blue-200 dark:border-zinc-600 rounded-lg text-xs text-zinc-700 dark:text-zinc-300 space-y-2">
+                        <p><strong class="text-zinc-900 dark:text-white">Hva er dette?</strong> Pasienten er ferdig med innpustet og ønsker å puste ut, men respiratoren fortsetter å presse luft ned i lungene.</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvorfor oppstår det?</strong> Pasientens nevrale innpust er kort (0.8 s), men maskinens I-tid er låst til 1.0 s. Pasienten begynner utpusten sin aktivt <em>mot</em> maskinens innblåsing.</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvordan lese grafene:</strong> Pasienten «presser imot» mot slutten av innpustet — luftveistrykket øker. I trykkurven ser du en tydelig pigg (spike) helt på slutten av innpustsfasen. PIP stiger i Measurements.</p>
+                        <p class="pt-1 border-t border-blue-200 dark:border-zinc-600"><strong class="text-emerald-700 dark:text-emerald-400">💡 Tiltak:</strong> Reduser maskinens I-tid for å matche pasientens korte innpust, eller bytt til PS slik at pasienten får puste ut når de selv ønsker.</p>
+                    </div>
+                </div>
+
+                <!-- 6. Breath-Stacking -->
+                <div>
+                    <button @click="loadPresetScenario('breath-stacking'); activeInfoBox = activeInfoBox === 'stack' ? null : 'stack'"
+                            :class="activeInfoBox === 'stack' ? 'bg-blue-800 ring-2 ring-blue-400' : 'bg-blue-600 hover:bg-blue-700'"
+                            class="w-full px-4 py-3 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                        <span>Breath-Stacking</span>
+                        <svg :class="activeInfoBox === 'stack' ? 'rotate-90' : ''" class="w-4 h-4 opacity-75 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                    </button>
+                    <div x-show="activeInfoBox === 'stack'" x-collapse x-cloak
+                         class="mt-1.5 p-3 bg-blue-50 dark:bg-zinc-700/50 border border-blue-200 dark:border-zinc-600 rounded-lg text-xs text-zinc-700 dark:text-zinc-300 space-y-2">
+                        <p><strong class="text-zinc-900 dark:text-white">Hva er dette?</strong> Pasienten drar i gang et nytt innpust før den forrige utpusten er ferdig. Volumene «stables» oppå hverandre inne i lungene.</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvorfor oppstår det?</strong> Pasienten har sterk og lang pusterefleks (Pmus 12, varighet 1.1 s). Maskinens I-tid er kort (0.6 s) med fastsatt tidalvolum. Pasientens lange sug utløser to påfølgende maskinelle pust — «dobbeltrigging».</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvordan lese grafene:</strong> Se på volumkurven! Den går opp under det første pustet, starter så vidt nedover, for så å skyte enda høyere opp ved neste pust uten å nå nullinjen. V<sub>TE</sub> vil i perioder være mye lavere enn levert VT (400 ml).</p>
+                        <p class="pt-1 border-t border-blue-200 dark:border-zinc-600"><strong class="text-emerald-700 dark:text-emerald-400">⚠️ Tiltak:</strong> Farlig — øker risiko for lungeskade (barotraume). Øk VT eller flowen for å tilfredsstille pasientens «lufthunger» i ett pust, eller bruk tung sedasjon i kontrollert modus.</p>
+                    </div>
+                </div>
+
+                <!-- 7. Auto-trigger -->
+                <div>
+                    <button @click="loadPresetScenario('auto-trigger'); activeInfoBox = activeInfoBox === 'auto' ? null : 'auto'"
+                            :class="activeInfoBox === 'auto' ? 'bg-blue-800 ring-2 ring-blue-400' : 'bg-blue-600 hover:bg-blue-700'"
+                            class="w-full px-4 py-3 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                        <span>Auto-trigger</span>
+                        <svg :class="activeInfoBox === 'auto' ? 'rotate-90' : ''" class="w-4 h-4 opacity-75 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                    </button>
+                    <div x-show="activeInfoBox === 'auto'" x-collapse x-cloak
+                         class="mt-1.5 p-3 bg-blue-50 dark:bg-zinc-700/50 border border-blue-200 dark:border-zinc-600 rounded-lg text-xs text-zinc-700 dark:text-zinc-300 space-y-2">
+                        <p><strong class="text-zinc-900 dark:text-white">Hva er dette?</strong> Maskinen leverer et pust helt av seg selv, uten at det er noen nevrologisk pusteinnsats fra pasienten.</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvorfor oppstår det?</strong> Pasienten puster ikke selv (Spont Rate = 0), men hjertet slår med 100 slag/min (Cardiac Oscillations). Hvert hjerteslag dytter litt på lungene og skaper ørsmå luftbølger. Maskinens Flow Trigger (2 L/min) forveksler hjerteslagets bølge med et pusteforsøk.</p>
+                        <p><strong class="text-zinc-900 dark:text-white">Hvordan lese grafene:</strong> RR i Measurements viser 24 selv om pasienten ligger helt i ro. På flow-kurven, like før innpustet starter, ser du ørsmå rytmiske svingninger forårsaket av hjertet.</p>
+                        <p class="pt-1 border-t border-blue-200 dark:border-zinc-600"><strong class="text-emerald-700 dark:text-emerald-400">💡 Tiltak:</strong> Gjør flow-triggeren mindre følsom (f.eks. 3-4 L/min) eller bytt til trykk-trigger. Undersøk også alltid om det kan være lekkasje i slangesettet.</p>
+                    </div>
+                </div>
             </div>
         </div>
 
