@@ -125,8 +125,7 @@
         <!-- Left Sidebar (Desktop) / Stacked (Mobile) -->
         <div class="flex flex-col gap-3 mb-3 lg:mb-0">
             <!-- Vent Settings & Measurements - Single Panel with Two Columns -->
-            <!-- Order: last on mobile (after Adjust Ventilator + optional QR), 1st on desktop -->
-            <div class="bg-white dark:bg-zinc-800 rounded-lg shadow-lg order-3 lg:order-1"
+            <div class="bg-white dark:bg-zinc-800 rounded-lg shadow-lg"
                  :class="isFullscreen ? 'p-4' : 'p-3'">
                 <div class="grid grid-cols-2 gap-3">
                     <!-- Vent Settings (Left Column) -->
@@ -338,6 +337,46 @@
                 </div>
             </div>
 
+            <!-- Asynchrony Examples Sidebar Card -->
+            <div class="bg-white dark:bg-zinc-800 rounded-lg shadow-lg p-4 flex flex-col gap-2">
+                <h3 class="text-sm font-bold text-zinc-900 dark:text-white mb-1 border-b border-zinc-100 dark:border-zinc-700 pb-1.5">Asynchrony Examples:</h3>
+                
+                <button @click="loadPresetScenario('reverse-triggering-1-2-pressure')"
+                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                    <span>Reverse Triggering (PC)</span>
+                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                </button>
+                <button @click="loadPresetScenario('reverse-triggering-1-2-volume')"
+                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                    <span>Reverse Triggering (VC)</span>
+                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                </button>
+                <button @click="loadPresetScenario('ineffective-efforts')"
+                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                    <span>Ineffective Efforts</span>
+                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                </button>
+                <button @click="loadPresetScenario('early-cycling')"
+                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                    <span>Early Cycling</span>
+                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                </button>
+                <button @click="loadPresetScenario('late-cycling')"
+                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                    <span>Late Cycling</span>
+                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                </button>
+                <button @click="loadPresetScenario('breath-stacking')"
+                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                    <span>Breath-Stacking</span>
+                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                </button>
+                <button @click="loadPresetScenario('auto-trigger')"
+                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-150 text-left flex items-center justify-between select-none">
+                    <span>Auto-trigger</span>
+                    <svg class="w-4 h-4 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                </button>
+            </div>
         </div>
 
         <!-- Main Content (Waveforms) -->
@@ -1261,45 +1300,7 @@
             </div>
         </div><!-- End Main Content (Waveforms) -->
 
-        <!-- Asynchrony Examples (Hidden in Learner Mode and Fullscreen) -->
-                    <div x-show="!isFullscreen" x-cloak
-                 class="lg:col-span-full bg-white dark:bg-zinc-800 rounded-lg shadow-lg p-3 mt-3 lg:mt-0 text-center">
-                <h3 class="text-xs font-semibold text-zinc-900 dark:text-white mb-2">Asynchrony examples:</h3>
-                <div class="flex flex-wrap justify-center gap-2">
-                    <button @click="loadPresetScenario('reverse-triggering-1-2-pressure')"
-                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
-                        Reverse Triggering (Early Trigger) PC
-                    </button>
-                    <button @click="loadPresetScenario('reverse-triggering-1-2-volume')"
-                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
-                        Reverse Triggering (Early Trigger) VC
-                    </button>
-                    <button @click="loadPresetScenario('ineffective-efforts')"
-                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
-                        Ineffective Efforts (Failed Trigger)
-                    </button>
-                    <button @click="loadPresetScenario('early-cycling')"
-                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
-                        Early Cycling
-                    </button>
-                    <button @click="loadPresetScenario('late-cycling')"
-                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
-                        Late Cycling
-                    </button>
-                    <button @click="loadPresetScenario('breath-stacking')"
-                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
-                        Breath-Stacking
-                    </button>
-                    <button @click="loadPresetScenario('auto-trigger')"
-                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors whitespace-nowrap">
-                        Auto-trigger (False Trigger)
-                    </button>
-                </div>
-                <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
-                    Note: Reverse triggering (Early Trigger) uses the 'Entrainment' settings under Patient
-                    Characteristics in the Settings panel (only available in control modes).
-                </p>
-            </div>
+
         
     </div><!-- End Two Column Grid -->
 
