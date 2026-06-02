@@ -656,7 +656,7 @@ const simulatorPresets = {
             showPmusTrace: false, // Show Pmus trace on pressure waveform (user toggle)
             showP01: false, // Show P0.1 measurement (user toggle)
             hideMeasurements: false, // Hide PIP/Plateau/PEEP from learners (teaching feature)
-            waveformHeight: (window.innerHeight < 800 ? 300 : (window.innerHeight < 1000 ? 250 : 200)), // Height in pixels (smaller viewports get taller waveforms; still adjustable)
+            waveformHeight: 300, // Height in pixels (fixed at 300px)
             savedWaveformHeight: null, // Store original height when entering fullscreen
 
             // Crosshair values for frozen waveform display (shown in chart titles instead of floating tooltip)

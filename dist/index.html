@@ -76,14 +76,6 @@
             <div class="hidden md:flex items-center gap-2 lg:gap-3">
                 <div
                     class="flex items-center gap-1 lg:gap-2 bg-white dark:bg-zinc-800 rounded-lg px-2 lg:px-3 py-1.5 shadow">
-                    <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">Waveform
-                        Size:</label>
-                    <input type="range" x-model.number="waveformHeight" min="100" max="400" step="50"
-                           class="w-16 lg:w-20 h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
-                    <span class="text-xs text-zinc-600 dark:text-zinc-400 w-8" x-text="waveformHeight + 'px'"></span>
-                </div>
-                <div
-                    class="flex items-center gap-1 lg:gap-2 bg-white dark:bg-zinc-800 rounded-lg px-2 lg:px-3 py-1.5 shadow">
                     <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">Time
                         Window:</label>
                     <input type="range" x-model.number="timeWindow" min="5" max="30" step="1"
@@ -118,12 +110,6 @@
                     <input type="range" x-model.number="timeWindow" min="5" max="30" step="1"
                            class="w-16 h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
                     <span class="text-xs text-zinc-600 dark:text-zinc-400 w-6" x-text="timeWindow + 's'"></span>
-                </div>
-                <div class="flex items-center gap-2 bg-white dark:bg-zinc-800 rounded-lg px-2 py-1.5 shadow">
-                    <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">Size:</label>
-                    <input type="range" x-model.number="waveformHeight" min="100" max="400" step="50"
-                           class="w-16 h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
-                    <span class="text-xs text-zinc-600 dark:text-zinc-400 w-8" x-text="waveformHeight + 'px'"></span>
                 </div>
             </div>
             <div class="flex items-center gap-2">
@@ -1492,12 +1478,6 @@
 
             <!-- Mobile Waveform Controls (shown only on mobile, above waveforms) -->
             <div class="flex md:hidden items-center justify-center gap-3 mb-3">
-                <div class="flex items-center gap-1 bg-white dark:bg-zinc-800 rounded-lg px-2 py-1.5 shadow">
-                    <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">Size:</label>
-                    <input type="range" x-model.number="waveformHeight" min="100" max="400" step="50"
-                           class="w-16 h-4 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer">
-                    <span class="text-xs text-zinc-600 dark:text-zinc-400 w-8" x-text="waveformHeight + 'px'"></span>
-                </div>
                 <div class="flex items-center gap-1 bg-white dark:bg-zinc-800 rounded-lg px-2 py-1.5 shadow">
                     <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">Time:</label>
                     <input type="range" x-model.number="timeWindow" min="5" max="30" step="1"
